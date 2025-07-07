@@ -1,47 +1,98 @@
-// server.js
+require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-const app = express();
+const querystring = require('querystring');
 
-const clientId = '4595aa31219c4fbabf83fe388bf55682';
-const clientSecret = '69c9de26bf1c48899e5e933f53dd5b90';
+const app = express();
+const port = process.env.PORT || 8888;
 
 app.use(cors());
 
-let cachedToken = null;
-let tokenExpiresAt = 0;
+const {
+  SPOTIFY_CLIENT_ID,
+  SPOTIFY_CLIENT_SECRET,
+  REDIRECT_URI,
+  FRONTEND_URI
+} = process.env;
 
-async function getSpotifyToken() {
-  if (cachedToken && Date.now() < tokenExpiresAt) return cachedToken;
+const generateRandomString = length => {
+  let text = '';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < length; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
+};
 
-  const response = await axios.post(
-    'https://accounts.spotify.com/api/token',
-    new URLSearchParams({ grant_type: 'client_credentials' }),
-    {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Authorization:
-          'Basic ' +
-          Buffer.from(clientId + ':' + clientSecret).toString('base64'),
-      },
-    }
-  );
+const stateKey = 'spotify_auth_state';
 
-  cachedToken = response.data.access_token;
-  tokenExpiresAt = Date.now() + response.data.expires_in * 1000 - 10000;
-  return cachedToken;
-}
+app.get('/login', (req, res) => {
+  const state = generateRandomString(16);
+  const scope = 'streaming user-read-email user-read-private user-library-read';
 
-app.get('/token', async (req, res) => {
+  res.redirect('https://accounts.spotify.com/authorize?' +
+    querystring.stringify({
+      response_type: 'code',
+      client_id: SPOTIFY_CLIENT_ID,
+      scope: scope,
+      redirect_uri: REDIRECT_URI,
+      state: state
+    }));
+});
+
+app.get('/callback', async (req, res) => {
+  const code = req.query.code || null;
+
   try {
-    const token = await getSpotifyToken();
-    res.json({ access_token: token });
-  } catch (error) {
-    console.error('Error fetching token:', error.message);
-    res.status(500).json({ error: 'Failed to fetch token' });
+    const tokenResponse = await axios.post('https://accounts.spotify.com/api/token',
+      querystring.stringify({
+        code: code,
+        redirect_uri: REDIRECT_URI,
+        grant_type: 'authorization_code'
+      }), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': 'Basic ' + Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64')
+        }
+      });
+
+    const { access_token, refresh_token } = tokenResponse.data;
+
+    // Redirect back to frontend with access and refresh tokens
+    res.redirect(`${FRONTEND_URI}/#${querystring.stringify({
+      access_token,
+      refresh_token
+    })}`);
+
+  } catch (err) {
+    console.error('Error getting tokens:', err.response?.data || err);
+    res.send('Error retrieving access token');
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🎧 Spotify Token Server running on port ${PORT}`));
+app.get('/refresh_token', async (req, res) => {
+  const refresh_token = req.query.refresh_token;
+
+  try {
+    const response = await axios.post('https://accounts.spotify.com/api/token',
+      querystring.stringify({
+        grant_type: 'refresh_token',
+        refresh_token: refresh_token
+      }), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': 'Basic ' + Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64')
+        }
+      });
+
+    res.json({ access_token: response.data.access_token });
+  } catch (err) {
+    console.error('Error refreshing token:', err.response?.data || err);
+    res.status(400).json({ error: 'Failed to refresh token' });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`Spotify auth server listening on port ${port}`);
+});
