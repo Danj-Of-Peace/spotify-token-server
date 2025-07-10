@@ -28,6 +28,34 @@ app.get('/callback', (req, res) => {
     json: true
   };
 
+  app.get('/refresh', (req, res) => {
+    const refresh_token = req.query.refresh_token;
+    if (!refresh_token) return res.status(400).json({ error: 'Missing refresh_token' });
+  
+    const authOptions = {
+      url: 'https://accounts.spotify.com/api/token',
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from(client_id + ':' + client_secret).toString('base64')
+      },
+      form: {
+        grant_type: 'refresh_token',
+        refresh_token: refresh_token
+      },
+      json: true
+    };
+  
+    request.post(authOptions, (error, response, body) => {
+      if (!error && response.statusCode === 200) {
+        res.json({
+          access_token: body.access_token
+        });
+      } else {
+        console.error('Refresh failed:', body);
+        res.status(500).json({ error: 'Failed to refresh token' });
+      }
+    });
+  });
+
   request.post(authOptions, (error, response, body) => {
     if (!error && response.statusCode === 200) {
       const access_token = body.access_token;
@@ -42,6 +70,7 @@ app.get('/callback', (req, res) => {
   });
 });
 
-app.listen(8888, () => {
-  console.log('✅ Backend listening on port 8888');
+const PORT = process.env.PORT || 8888;
+app.listen(PORT, () => {
+  console.log(`✅ Backend listening on port ${PORT}`);
 });
