@@ -27,6 +27,11 @@ admin.initializeApp({
 const db = admin.database();
 */
 
+// === ✅ Health check route (for Wake Server button) ===
+app.get('/', (req, res) => {
+  res.status(200).send('🎵 Spotify Token Server is awake');
+});
+
 // === STEP 1: Login Callback ===
 app.get('/callback', (req, res) => {
   const code = req.query.code;
