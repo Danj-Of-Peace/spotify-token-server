@@ -3,7 +3,9 @@ const express = require('express');
 const request = require('request');
 const cors = require('cors');
 const querystring = require('querystring');
-// const { initializeApp, getDatabase, ref, set } = require('firebase-admin'); // Optional: for auto-updating Firebase
+
+const admin = require('firebase-admin');
+const serviceAccount = require('./firebase-service-account.json');
 
 const app = express();
 app.use(cors());
@@ -14,18 +16,13 @@ const client_secret = process.env.SPOTIFY_CLIENT_SECRET;
 const redirect_uri = process.env.REDIRECT_URI;
 const frontend_uri = process.env.FRONTEND_URI;
 
-// OPTIONAL: Uncomment if you want the backend to update Firebase
-/*
-const admin = require('firebase-admin');
-const serviceAccount = require('./firebase-service-account.json');
-
+// Initialize Firebase Admin SDK
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  databaseURL: process.env.FIREBASE_DB_URL
+  databaseURL: process.env.FIREBASE_DB_URL,
 });
 
 const db = admin.database();
-*/
 
 // === ✅ Health check route (for Wake Server button) ===
 app.get('/', (req, res) => {
@@ -59,10 +56,12 @@ app.get('/callback', (req, res) => {
 
     const { access_token, refresh_token } = body;
 
-    res.redirect(`${frontend_uri}#${querystring.stringify({
-      access_token,
-      refresh_token,
-    })}`);
+    res.redirect(
+      `${frontend_uri}#${querystring.stringify({
+        access_token,
+        refresh_token,
+      })}`
+    );
   });
 });
 
@@ -92,15 +91,16 @@ app.get('/refresh', (req, res) => {
     const access_token = body.access_token;
     res.json({ access_token });
 
-    // OPTIONAL: Auto-update Firebase with the new token
-    /*
+    // Auto-update Firebase with the new token
     try {
-      await db.ref('spotifyAccessToken').set(access_token);
+      await db.ref('spotifyAccessToken').set({
+        token: access_token,
+        updatedAt: Date.now(),
+      });
       console.log('✅ Updated spotifyAccessToken in Firebase');
     } catch (err) {
       console.error('🔴 Failed to update Firebase token:', err);
     }
-    */
   });
 });
 
